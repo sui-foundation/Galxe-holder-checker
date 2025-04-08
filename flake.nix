@@ -48,6 +48,8 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         ./nix/shell.nix
+        ./nix/package.nix
+        ./nix/module.nix
       ];
       systems = [
         "x86_64-linux"
