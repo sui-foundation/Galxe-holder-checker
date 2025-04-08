@@ -9,3 +9,5 @@ hyper = { version = "1", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["full"] }
+sui_types = { git = "https://github.com/yanganto/sui", package = "sui-types", tag = "flake-testnet-v1.46.1" }
+regex = "1.11.1"
