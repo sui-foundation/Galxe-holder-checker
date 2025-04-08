@@ -1,0 +1,40 @@
+name: Server
+concurrency:
+  group: service-${{ github.head_ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - src/**
+      - Cargo.toml
+      - Cargo.lock
+
+jobs:
+  Server:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@v30
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Format
+        run: nix --accept-flake-config develop -c cargo fmt
+
+      - name: Check
+        run: nix --accept-flake-config develop -c cargo check
+
+      - name: Clippy
+        run: nix --accept-flake-config develop -c cargo clippy
+
+      - name: Build Service
+        run: nix --accept-flake-config develop -c cargo build
+
+      - name: Test stornft-ctl
+        run: nix --accept-flake-config develop -c cargo test
