@@ -30,6 +30,13 @@
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
+    secrets = {
+      url = "github:yanganto/Sekreto";
+    };
+    nixos-generators = {
+      url = "github:nix-community/nixos-generators";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   nixConfig.extra-substituters = [
@@ -49,10 +56,21 @@
       imports = [
         ./nix/shell.nix
         ./nix/package.nix
+        ./nix/machine.nix
         ./nix/module.nix
       ];
       systems = [
         "x86_64-linux"
       ];
+      perSystem = { pkgs, system, ... }: {
+        _module.args.pkgs = import inputs.nixpkgs {
+          system = "x86_64-linux";
+          overlays = [
+            (_self: super: rec {
+              craneLib = inputs.crane.mkLib pkgs;
+            })
+          ];
+        };
+      };
     };
 }
