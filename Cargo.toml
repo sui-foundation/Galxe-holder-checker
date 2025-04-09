@@ -10,4 +10,7 @@ tokio = { version = "1", features = ["full"] }
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["full"] }
 sui_types = { git = "https://github.com/yanganto/sui", package = "sui-types", tag = "flake-testnet-v1.46.1" }
+sui_sdk = { git = "https://github.com/yanganto/sui", package = "sui-sdk", tag = "flake-testnet-v1.46.1" }
+sui_json_rpc_types = { git = "https://github.com/yanganto/sui", package = "sui-json-rpc-types", tag = "flake-testnet-v1.46.1"}
 regex = "1.11.1"
+move_core_types =  { git = "https://github.com/yanganto/sui", package = "move-core-types", tag = "flake-testnet-v1.46.1"}
