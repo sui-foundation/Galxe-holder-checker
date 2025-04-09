@@ -2,10 +2,20 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::error::Error;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::OnceLock;
 
-use std::str::FromStr;
-use sui_types::base_types::SuiAddress;
+use move_core_types::account_address::AccountAddress;
+use move_core_types::language_storage::{StructTag, TypeTag};
+use sui_json_rpc_types::SuiMoveStruct;
+use sui_json_rpc_types::SuiMoveValue;
+use sui_json_rpc_types::SuiObjectResponseQuery;
+use sui_json_rpc_types::SuiParsedData;
+use sui_json_rpc_types::SuiParsedMoveObject;
+use sui_json_rpc_types::{SuiObjectDataFilter, SuiObjectDataOptions};
+use sui_sdk::SuiClientBuilder;
+use sui_types::base_types::{ObjectID, SuiAddress};
+use sui_types::Identifier;
 
 use clap::Parser;
 use http_body_util::Full;
@@ -17,8 +27,9 @@ use hyper_util::rt::TokioIo;
 use regex::Regex;
 use tokio::net::TcpListener;
 
-static COIN_MAP: OnceLock<HashMap<String, SuiAddress>> = OnceLock::new();
+static COIN_MAP: OnceLock<HashMap<String, ObjectID>> = OnceLock::new();
 static COIN_HOLDER_RE: OnceLock<Regex> = OnceLock::new();
+static COIN_ADDR: OnceLock<SuiAddress> = OnceLock::new();
 
 #[derive(clap::Parser)]
 #[command(author, version, about)]
@@ -53,29 +64,82 @@ async fn handler(req: Request<hyper::body::Incoming>) -> Result<Response<Full<By
         .captures(&req.uri().to_string())
     {
         let coin_map = COIN_MAP.get().expect("COIN_MAP should init");
-        let package_id = coin_map[&caps["coin_type"]];
+        let package = coin_map[&caps["coin_type"]];
         let address = SuiAddress::from_str(&caps["addr"]).expect("address incorrect");
-        let value: u64 = caps["value"].parse().expect("value incorrect");
+        let expect_value: u64 = caps["value"].parse().expect("value incorrect");
 
-        println!("{package_id:?}");
-        println!("{value:?}");
-        println!("{address:?}");
-        Ok(Response::new(Full::new(Bytes::from("1"))))
-    } else {
-        Ok(Response::new(Full::new(Bytes::from("0"))))
+        let sui = if let Ok(sui) = SuiClientBuilder::default().build_mainnet().await {
+            sui
+        } else {
+            return Ok(Response::new(Full::new(Bytes::from("-1"))));
+        };
+        if let Ok(coins) = sui
+            .read_api()
+            .get_owned_objects(
+                address,
+                Some(SuiObjectResponseQuery {
+                    filter: Some(SuiObjectDataFilter::StructType(StructTag {
+                        address: AccountAddress::TWO,
+                        module: Identifier::new("coin").unwrap(),
+                        name: Identifier::new("Coin").unwrap(),
+                        type_params: vec![TypeTag::Struct(Box::new(StructTag {
+                            address: AccountAddress::from_bytes(package.into_bytes()).unwrap(),
+                            module: Identifier::new(&caps["coin_type"]).unwrap(),
+                            name: Identifier::new(caps["coin_type"].to_uppercase()).unwrap(),
+                            type_params: Vec::new(),
+                        }))],
+                    })),
+                    options: Some(SuiObjectDataOptions {
+                        show_content: true,
+                        ..Default::default()
+                    }),
+                }),
+                None,
+                None,
+            )
+            .await
+        {
+            let mut value = 0u64;
+            for coin in coins.data.iter() {
+                if let Some(SuiParsedData::MoveObject(SuiParsedMoveObject {
+                    fields: SuiMoveStruct::WithFields(fields),
+                    ..
+                })) = &coin.data.as_ref().expect("coin has data").content
+                {
+                    match fields.get("balance") {
+                        Some(SuiMoveValue::Number(v)) => {
+                            value += *v as u64;
+                        }
+                        Some(SuiMoveValue::String(s)) => {
+                            let v: u64 = s.parse().expect("balance should be numbers");
+                            value += v;
+                        }
+                        _ => (),
+                    }
+                }
+                if value >= expect_value {
+                    // Already more than expected value
+                    break;
+                }
+            }
+            if value >= expect_value {
+                return Ok(Response::new(Full::new(Bytes::from("1"))));
+            }
+        }
     }
+    Ok(Response::new(Full::new(Bytes::from("0"))))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Command::parse();
-    let coins: HashMap<String, SuiAddress> = args
+    let coins: HashMap<String, ObjectID> = args
         .coins
         .into_iter()
         .map(|(k, v)| {
             (
                 k,
-                SuiAddress::from_str(&v).expect("Coin package id incorrect"),
+                ObjectID::from_str(&v).expect("Coin package id incorrect"),
             )
         })
         .collect();
@@ -83,6 +147,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     COIN_MAP.get_or_init(|| coins);
     COIN_HOLDER_RE.get_or_init(|| {
         Regex::new(r"^/(?P<coin_type>[^/]+)/(?P<value>\d+)\?address=(?<addr>.+)$").unwrap()
+    });
+    COIN_ADDR.get_or_init(|| {
+        SuiAddress::from_str("0x0000000000000000000000000000000000000000000000000000000000000002")
+            .unwrap()
     });
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
