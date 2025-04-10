@@ -20,8 +20,14 @@ use sui_types::Identifier;
 use clap::Parser;
 use http_body_util::Full;
 use hyper::body::Bytes;
+use hyper::header::{
+    HeaderValue, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
+    ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_MAX_AGE,
+};
 use hyper::server::conn::http1::Builder;
 use hyper::service::service_fn;
+use hyper::Method;
+use hyper::StatusCode;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use regex::Regex;
@@ -57,7 +63,32 @@ where
     Ok((s[..pos].parse()?, s[pos + 1..].parse()?))
 }
 
+fn add_headers(mut response: Response<Full<Bytes>>) -> Response<Full<Bytes>> {
+    response.headers_mut().insert(
+        ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("Content-Type"),
+    );
+    response.headers_mut().insert(
+        ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, OPTIONS"),
+    );
+    response.headers_mut().insert(
+        ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("https://dashboard.galxe.com"),
+    );
+    response
+        .headers_mut()
+        .insert(ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("604800"));
+    response
+}
+
 async fn handler(req: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
+    if req.method() == Method::OPTIONS {
+        let mut res = add_headers(Response::new(Full::new(Bytes::from(""))));
+        *res.status_mut() = StatusCode::NO_CONTENT;
+        return Ok(res);
+    }
+
     if let Some(caps) = COIN_HOLDER_RE
         .get()
         .expect("COIN_HOLDER_RE should init")
@@ -71,7 +102,7 @@ async fn handler(req: Request<hyper::body::Incoming>) -> Result<Response<Full<By
         let sui = if let Ok(sui) = SuiClientBuilder::default().build_mainnet().await {
             sui
         } else {
-            return Ok(Response::new(Full::new(Bytes::from("-1"))));
+            return Ok(add_headers(Response::new(Full::new(Bytes::from("-1")))));
         };
         if let Ok(coins) = sui
             .read_api()
@@ -123,11 +154,11 @@ async fn handler(req: Request<hyper::body::Incoming>) -> Result<Response<Full<By
                 }
             }
             if value >= expect_value {
-                return Ok(Response::new(Full::new(Bytes::from("1"))));
+                return Ok(add_headers(Response::new(Full::new(Bytes::from("1")))));
             }
         }
     }
-    Ok(Response::new(Full::new(Bytes::from("0"))))
+    Ok(add_headers(Response::new(Full::new(Bytes::from("0")))))
 }
 
 #[tokio::main]
