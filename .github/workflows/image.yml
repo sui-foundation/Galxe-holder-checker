@@ -1,17 +1,18 @@
-name: Nix
+name: Image
 concurrency:
-  group: nix-${{ github.head_ref }}
+  group: image-${{ github.head_ref }}
   cancel-in-progress: true
 
 on:
   pull_request:
     paths:
+      - src/**
       - nix/**
       - flake.nix
       - flake.lock
 
 jobs:
-  Nix:
+  Image:
     runs-on: ubuntu-latest
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: true
@@ -25,8 +26,5 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GHCTOKEN }}
 
-      - name: Show
-        run: nix flake show
-
-      - name: Build
-        run: nix build .#ghc
+      - name: Build Image
+        run: nix develop .#build -c nixos-generate --flake .#ghc -f amazon
